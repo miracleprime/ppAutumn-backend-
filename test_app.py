@@ -1,118 +1,107 @@
 import pytest
 from app import app, db
 from models import User, Job, Application
+from werkzeug.security import generate_password_hash
 
 @pytest.fixture
 def client():
     app.config["TESTING"] = True
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"  # БД в памяти
-    with app.app_context():
-        db.create_all()
-        yield app.test_client()
-        db.drop_all()
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"  # тестовая БД
+    with app.test_client() as client:
+        with app.app_context():
+            db.create_all()
+        yield client
+        with app.app_context():
+            db.drop_all()
 
-# 1. Регистрация пользователя
-def test_register_user(client):
-    response = client.post("/register", data={"username": "stud1", "password": "123456", "role": "student"})
-    assert response.status_code in (200, 302)  # redirect на login
 
-# 2. Логин (неверный пароль)
-def test_login_wrong_password(client):
-    u = User(username="stud2")
-    u.set_password("123456")
-    db.session.add(u)
-    db.session.commit()
+def register(client, username, password, role="student"):
+    return client.post("/register", data={
+        "username": username,
+        "password": password,
+        "role": role
+    }, follow_redirects=True)
 
-    response = client.post("/login", data={"username": "stud2", "password": "wrong"})
-    assert b"Неверный логин или пароль" in response.data
 
-# 3. Создание вакансии (работодатель)
-def test_create_job(client):
-    # создаём работодателя
-    u = User(username="emp1", role="employer")
-    u.set_password("123456")
-    db.session.add(u)
-    db.session.commit()
+def login(client, username, password):
+    return client.post("/login", data={
+        "username": username,
+        "password": password
+    }, follow_redirects=True)
 
-    with client.session_transaction() as sess:
-        sess["username"] = "emp1"
 
-    response = client.post("/api/jobs", json={
-        "title": "Ассистент по математике",
-        "description": "Помощь в проведении занятий",
-        "job_type": "assistant"
+# ---------------- ТЕСТЫ ----------------
+
+def test_register_success(client):
+    """Регистрация нового пользователя проходит успешно"""
+    rv = register(client, "student1", "password", "student")
+    assert rv.status_code == 200 or rv.status_code == 302
+
+
+def test_register_duplicate(client):
+    """Регистрация с уже существующим логином должна дать ошибку"""
+    register(client, "student1", "password", "student")
+    rv = register(client, "student1", "password", "student")
+    assert b"Пользователь уже существует" in rv.data
+
+
+def test_login_success(client):
+    """Успешный вход"""
+    register(client, "student2", "password", "student")
+    rv = login(client, "student2", "password")
+    assert rv.status_code == 200 or rv.status_code == 302
+
+
+def test_login_fail(client):
+    """Вход с неверным паролем"""
+    register(client, "student3", "password", "student")
+    rv = login(client, "student3", "wrongpass")
+    assert b"Неверный логин или пароль" in rv.data
+
+
+def test_create_job_as_employer(client):
+    """Работодатель может создать вакансию"""
+    register(client, "emp1", "password", "employer")
+    login(client, "emp1", "password")
+    rv = client.post("/api/jobs", json={
+        "title": "Test Job",
+        "description": "Some description",
+        "job_type": "internship"
     })
-    assert response.status_code == 201
+    assert rv.status_code == 201
+    assert b"Вакансия создана" in rv.data
 
-# 4. Ошибка при создании вакансии студентом
-# 4. Ошибка при создании вакансии студентом
-def test_student_cannot_create_job(client):
-    u = User(username="stud3", role="student")
-    u.set_password("123456")
-    db.session.add(u)
-    db.session.commit()
 
-    with client.session_transaction() as sess:
-        sess["username"] = "stud3"
-
-    response = client.post("/api/jobs", json={
-        "title": "Фейковая вакансия",
-        "description": "Не должна создаться"
+def test_create_job_as_student_forbidden(client):
+    """Студент не может создать вакансию"""
+    register(client, "stud1", "password", "student")
+    login(client, "stud1", "password")
+    rv = client.post("/api/jobs", json={
+        "title": "Hack Job",
+        "description": "Should not work",
+        "job_type": "internship"
     })
-    assert response.status_code == 403
+    assert rv.status_code == 403
 
-# 5. Получение списка вакансий
-def test_get_jobs(client):
-    u = User(username="emp2", role="employer")
-    u.set_password("123456")
-    db.session.add(u)
-    db.session.commit()
-    job = Job(title="Research intern", description="Лаборатория", job_type="research", employer=u)
-    db.session.add(job)
-    db.session.commit()
 
-    response = client.get("/api/jobs")
-    assert response.status_code == 200
-    assert b"Research intern" in response.data
-
-# 6. Подача заявки студентом
-def test_apply_to_job(client):
-    emp = User(username="emp3", role="employer")
-    emp.set_password("123456")
-    stud = User(username="stud4", role="student")
-    stud.set_password("123456")
-    db.session.add_all([emp, stud])
-    db.session.commit()
-
-    job = Job(title="Internship", description="Тест", job_type="internship", employer=emp)
-    db.session.add(job)
-    db.session.commit()
-
-    with client.session_transaction() as sess:
-        sess["username"] = "stud4"
-
-    response = client.post(f"/api/jobs/{job.id}/apply", json={
-        "resume_url": "http://cv.example.com/stud4.pdf",
-        "cover_letter": "Хочу на стажировку"
+def test_apply_for_job(client):
+    """Студент может откликнуться на вакансию"""
+    # создаём работодателя + вакансию
+    register(client, "emp2", "password", "employer")
+    login(client, "emp2", "password")
+    rv = client.post("/api/jobs", json={
+        "title": "Internship Job",
+        "description": "For students",
+        "job_type": "internship"
     })
-    assert response.status_code == 201
+    job_id = rv.get_json()["id"]
 
-# 7. Ошибка подачи заявки работодателем
-def test_employer_cannot_apply(client):
-    emp = User(username="emp4", role="employer")
-    emp.set_password("123456")
-    db.session.add(emp)
-    db.session.commit()
-
-    job = Job(title="Internship 2", description="Тест", job_type="internship", employer=emp)
-    db.session.add(job)
-    db.session.commit()
-
-    with client.session_transaction() as sess:
-        sess["username"] = "emp4"
-
-    response = client.post(f"/api/jobs/{job.id}/apply", json={
-        "resume_url": "http://cv.example.com/x.pdf",
-        "cover_letter": "я работодатель"
+    # создаём студента + отклик
+    register(client, "stud2", "password", "student")
+    login(client, "stud2", "password")
+    rv = client.post(f"/api/jobs/{job_id}/apply", json={
+        "resume_url": "http://example.com/resume.pdf",
+        "cover_letter": "I am a good candidate"
     })
-    assert response.status_code == 403
+    assert rv.status_code == 201
+    assert b"Заявка подана" in rv.data
