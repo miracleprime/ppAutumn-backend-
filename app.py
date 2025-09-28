@@ -15,7 +15,6 @@ app = Flask(
     template_folder=FRONT_DIR
 )
 
-
 app.config.from_object(Config)
 
 db.init_app(app)
