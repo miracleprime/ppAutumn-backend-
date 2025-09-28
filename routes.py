@@ -202,33 +202,35 @@ def update_application(app_id):
 # -------------------------------
 # ПРОФИЛЬ
 # -------------------------------
-@routes_bp.route('/api/profile', methods=['GET'])
-def get_profile():
-    if 'username' not in session:
-        return jsonify({'error': 'Необходима авторизация'}), 401
+@routes_bp.route("/api/profile", methods=["GET", "PUT"])
+def api_profile():
+    if "username" not in session:
+        return jsonify({"error": "Необходима авторизация"}), 401
 
-    user = User.query.filter_by(username=session['username']).first()
-    if not user:
-        return jsonify({'error': 'Пользователь не найден'}), 404
+    user = User.query.filter_by(username=session["username"]).first()
 
-    # Разные профили для студентов и работодателей
-    if user.role == "student":
+    if request.method == "GET":
         return jsonify({
-            'username': user.username,
-            'role': user.role,
-            'full_name': user.full_name or "",
-            'course': user.course or "",
-            'faculty': user.faculty or ""
+            "username": user.username,
+            "role": user.role,
+            "full_name": user.full_name,
+            "course": user.course,
+            "faculty": user.faculty,
+            "organization": user.organization
         })
 
-    elif user.role == "employer":
-        return jsonify({
-            'username': user.username,
-            'role': user.role,
-            'organization': user.organization or ""
-        })
+    if request.method == "PUT":
+        data = request.get_json()
+        if user.role == "student":
+            user.full_name = data.get("full_name", user.full_name)
+            user.course = data.get("course", user.course)
+            user.faculty = data.get("faculty", user.faculty)
+        elif user.role == "employer":
+            user.organization = data.get("organization", user.organization)
 
-    return jsonify({'username': user.username, 'role': user.role})
+        db.session.commit()
+        return jsonify({"message": "Профиль обновлён"})
+
 
 
 @routes_bp.route('/api/profile/update', methods=['POST'])
