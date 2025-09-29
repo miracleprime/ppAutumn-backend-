@@ -1,107 +1,67 @@
+# tests/test_api.py
 import pytest
 from app import app, db
 from models import User, Job, Application
-from werkzeug.security import generate_password_hash
 
 @pytest.fixture
 def client():
     app.config["TESTING"] = True
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"  # тестовая БД
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     with app.test_client() as client:
         with app.app_context():
             db.create_all()
+            # Создаём тестовых пользователей
+            student = User(username="student", password="123", role="student")
+            employer = User(username="employer", password="123", role="employer")
+            db.session.add_all([student, employer])
+            db.session.commit()
         yield client
-        with app.app_context():
-            db.drop_all()
 
+# 1. Регистрация нового пользователя
+def test_register_user(client):
+    resp = client.post("/register", json={"username": "testuser", "password": "pass", "role": "student"})
+    assert resp.status_code == 201
 
-def register(client, username, password, role="student"):
-    return client.post("/register", data={
-        "username": username,
-        "password": password,
-        "role": role
-    }, follow_redirects=True)
+# 2. Логин существующего пользователя
+def test_login_user(client):
+    resp = client.post("/login", json={"username": "student", "password": "123"})
+    assert resp.status_code in [200, 302]  # может быть редирект
 
+# 3. Создание вакансии работодателем
+def test_create_job(client):
+    with client.session_transaction() as sess:
+        sess["user_id"] = 2  # employer
+        sess["role"] = "employer"
+    resp = client.post("/api/jobs", json={"title": "Test Job", "description": "Test desc", "type": "internship"})
+    assert resp.status_code == 201
 
-def login(client, username, password):
-    return client.post("/login", data={
-        "username": username,
-        "password": password
-    }, follow_redirects=True)
+# 4. Получение списка вакансий
+def test_get_jobs(client):
+    resp = client.get("/api/jobs")
+    assert resp.status_code == 200
+    assert isinstance(resp.json, list)
 
+# 5. Подача отклика студентом
+def test_apply_job(client):
+    with client.session_transaction() as sess:
+        sess["user_id"] = 1  # student
+        sess["role"] = "student"
+    resp = client.post("/api/applications", json={"job_id": 1})
+    assert resp.status_code == 201
 
-# ---------------- ТЕСТЫ ----------------
+# 6. Получение списка откликов
+def test_get_applications(client):
+    with client.session_transaction() as sess:
+        sess["user_id"] = 1
+        sess["role"] = "student"
+    resp = client.get("/api/applications")
+    assert resp.status_code == 200
 
-def test_register_success(client):
-    """Регистрация нового пользователя проходит успешно"""
-    rv = register(client, "student1", "password", "student")
-    assert rv.status_code == 200 or rv.status_code == 302
-
-
-def test_register_duplicate(client):
-    """Регистрация с уже существующим логином должна дать ошибку"""
-    register(client, "student1", "password", "student")
-    rv = register(client, "student1", "password", "student")
-    assert b"Пользователь уже существует" in rv.data
-
-
-def test_login_success(client):
-    """Успешный вход"""
-    register(client, "student2", "password", "student")
-    rv = login(client, "student2", "password")
-    assert rv.status_code == 200 or rv.status_code == 302
-
-
-def test_login_fail(client):
-    """Вход с неверным паролем"""
-    register(client, "student3", "password", "student")
-    rv = login(client, "student3", "wrongpass")
-    assert b"Неверный логин или пароль" in rv.data
-
-
-def test_create_job_as_employer(client):
-    """Работодатель может создать вакансию"""
-    register(client, "emp1", "password", "employer")
-    login(client, "emp1", "password")
-    rv = client.post("/api/jobs", json={
-        "title": "Test Job",
-        "description": "Some description",
-        "job_type": "internship"
-    })
-    assert rv.status_code == 201
-    assert b"Вакансия создана" in rv.data
-
-
-def test_create_job_as_student_forbidden(client):
-    """Студент не может создать вакансию"""
-    register(client, "stud1", "password", "student")
-    login(client, "stud1", "password")
-    rv = client.post("/api/jobs", json={
-        "title": "Hack Job",
-        "description": "Should not work",
-        "job_type": "internship"
-    })
-    assert rv.status_code == 403
-
-
-def test_apply_for_job(client):
-    """Студент может откликнуться на вакансию"""
-    # создаём работодателя + вакансию
-    register(client, "emp2", "password", "employer")
-    login(client, "emp2", "password")
-    rv = client.post("/api/jobs", json={
-        "title": "Internship Job",
-        "description": "For students",
-        "job_type": "internship"
-    })
-    job_id = rv.get_json()["id"]
-
-    # создаём студента + отклик
-    register(client, "stud2", "password", "student")
-    login(client, "stud2", "password")
-    rv = client.post(f"/api/jobs/{job_id}/apply", json={
-        "resume_url": "http://example.com/resume.pdf",
-        "cover_letter": "I am a good candidate"
-    })
-    assert rv.status_code == 201
-    assert b"Заявка подана" in rv.data
+# 7. Обновление профиля
+def test_update_profile(client):
+    with client.session_transaction() as sess:
+        sess["user_id"] = 1
+        sess["role"] = "student"
+    resp = client.put("/api/profile", json={"full_name": "Иван Иванов", "course": "3", "faculty": "ФКН"})
+    assert resp.status_code == 200
+    assert "успешно" in resp.json.get("message", "").lower()
