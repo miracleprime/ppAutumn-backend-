@@ -164,14 +164,22 @@ def get_applications():
             'id': app.id,
             'job_id': app.job_id,
             'job_title': app.job.title if app.job else None,
+            #  студент
             'student': app.student.username if app.student else None,
+            'student_full_name': app.student.full_name if app.student else "",
+            'student_course': app.student.course if app.student else "",
+            'student_faculty': app.student.faculty if app.student else "",
+            #  работодатель (берём у вакансии -> employer -> organization)
+            'organization': app.job.employer.organization if app.job and app.job.employer else "",
             'resume_url': app.resume_url,
             'cover_letter': app.cover_letter,
             'status': app.status,
-            'applied_at': app.applied_at.isoformat()
+            'applied_at': app.applied_at.isoformat(),
+            'can_manage': (user.role == "employer")
         })
 
     return jsonify(app_list)
+
 
 # -------------------------------
 # ОБНОВЛЕНИЕ СТАТУСА ЗАЯВКИ
