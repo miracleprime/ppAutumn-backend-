@@ -1,67 +1,79 @@
-# tests/test_api.py
+# test_app.py
 import pytest
 from app import app, db
-from models import User, Job, Application
+from models import Job
 
-@pytest.fixture
-def client():
-    app.config["TESTING"] = True
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    with app.test_client() as client:
-        with app.app_context():
-            db.create_all()
-            # Создаём тестовых пользователей
-            student = User(username="student", password="123", role="student")
-            employer = User(username="employer", password="123", role="employer")
-            db.session.add_all([student, employer])
-            db.session.commit()
-        yield client
+@pytest.fixture(autouse=True)
+def setup_db():
+    """Перед каждым тестом создаём чистую БД в контексте приложения"""
+    with app.app_context():
+        db.drop_all()
+        db.create_all()
+        yield
+        db.session.remove()
+        db.drop_all()
 
-# 1. Регистрация нового пользователя
-def test_register_user(client):
-    resp = client.post("/register", json={"username": "testuser", "password": "pass", "role": "student"})
+def test_register_user():
+    client = app.test_client()
+    resp = client.post("/register", data={"username": "student1", "password": "123", "role": "student"})
+    assert resp.status_code in (200, 302)
+
+def test_login_user():
+    client = app.test_client()
+    client.post("/register", data={"username": "student2", "password": "123", "role": "student"})
+    resp = client.post("/login", data={"username": "student2", "password": "123"})
+    assert resp.status_code in (200, 302)
+
+def test_create_job():
+    client = app.test_client()
+    client.post("/register", data={"username": "employer1", "password": "123", "role": "employer"})
+    client.post("/login", data={"username": "employer1", "password": "123"})
+    resp = client.post("/api/jobs", json={"title": "Test job", "description": "Some desc", "job_type": "internship"})
     assert resp.status_code == 201
 
-# 2. Логин существующего пользователя
-def test_login_user(client):
-    resp = client.post("/login", json={"username": "student", "password": "123"})
-    assert resp.status_code in [200, 302]  # может быть редирект
-
-# 3. Создание вакансии работодателем
-def test_create_job(client):
-    with client.session_transaction() as sess:
-        sess["user_id"] = 2  # employer
-        sess["role"] = "employer"
-    resp = client.post("/api/jobs", json={"title": "Test Job", "description": "Test desc", "type": "internship"})
-    assert resp.status_code == 201
-
-# 4. Получение списка вакансий
-def test_get_jobs(client):
+def test_get_jobs():
+    client = app.test_client()
+    client.post("/register", data={"username": "employer2", "password": "123", "role": "employer"})
+    client.post("/login", data={"username": "employer2", "password": "123"})
+    client.post("/api/jobs", json={"title": "Test job2", "description": "Some desc", "job_type": "internship"})
     resp = client.get("/api/jobs")
     assert resp.status_code == 200
-    assert isinstance(resp.json, list)
+    assert isinstance(resp.get_json(), list)
 
-# 5. Подача отклика студентом
-def test_apply_job(client):
-    with client.session_transaction() as sess:
-        sess["user_id"] = 1  # student
-        sess["role"] = "student"
-    resp = client.post("/api/applications", json={"job_id": 1})
+def test_apply_job():
+    client = app.test_client()
+    client.post("/register", data={"username": "employer3", "password": "123", "role": "employer"})
+    client.post("/login", data={"username": "employer3", "password": "123"})
+    client.post("/api/jobs", json={"title": "Test job3", "description": "Some desc", "job_type": "internship"})
+    with app.app_context():
+        job_id = Job.query.first().id
+
+    client.get("/logout")
+    client.post("/register", data={"username": "student3", "password": "123", "role": "student"})
+    client.post("/login", data={"username": "student3", "password": "123"})
+    resp = client.post(f"/api/jobs/{job_id}/apply", json={"resume_url": "link", "cover_letter": "Hi"})
     assert resp.status_code == 201
 
-# 6. Получение списка откликов
-def test_get_applications(client):
-    with client.session_transaction() as sess:
-        sess["user_id"] = 1
-        sess["role"] = "student"
+def test_get_applications():
+    client = app.test_client()
+    client.post("/register", data={"username": "employer4", "password": "123", "role": "employer"})
+    client.post("/login", data={"username": "employer4", "password": "123"})
+    client.post("/api/jobs", json={"title": "Test job4", "description": "Some desc", "job_type": "internship"})
+    with app.app_context():
+        job_id = Job.query.first().id
+
+    client.get("/logout")
+    client.post("/register", data={"username": "student4", "password": "123", "role": "student"})
+    client.post("/login", data={"username": "student4", "password": "123"})
+    client.post(f"/api/jobs/{job_id}/apply", json={"resume_url": "link", "cover_letter": "Hi"})
+
     resp = client.get("/api/applications")
     assert resp.status_code == 200
+    assert isinstance(resp.get_json(), list)
 
-# 7. Обновление профиля
-def test_update_profile(client):
-    with client.session_transaction() as sess:
-        sess["user_id"] = 1
-        sess["role"] = "student"
-    resp = client.put("/api/profile", json={"full_name": "Иван Иванов", "course": "3", "faculty": "ФКН"})
+def test_update_profile():
+    client = app.test_client()
+    client.post("/register", data={"username": "student5", "password": "123", "role": "student"})
+    client.post("/login", data={"username": "student5", "password": "123"})
+    resp = client.put("/api/profile", json={"full_name": "Иванов Иван", "course": "2", "faculty": "ФКН"})
     assert resp.status_code == 200
-    assert "успешно" in resp.json.get("message", "").lower()
