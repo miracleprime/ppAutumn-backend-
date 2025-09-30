@@ -241,31 +241,6 @@ def api_profile():
 
 
 
-@routes_bp.route('/api/profile/update', methods=['POST'])
-def update_profile():
-    if 'username' not in session:
-        return jsonify({'error': 'Необходима авторизация'}), 401
-
-    user = User.query.filter_by(username=session['username']).first()
-    if not user:
-        return jsonify({'error': 'Пользователь не найден'}), 404
-
-    data = request.get_json()
-
-    # Студент может обновлять только свои учебные данные
-    if user.role == "student":
-        user.full_name = data.get('full_name', user.full_name)
-        user.course = data.get('course', user.course)
-        user.faculty = data.get('faculty', user.faculty)
-
-    # Работодатель может обновлять только название организации
-    elif user.role == "employer":
-        user.organization = data.get('organization', user.organization)
-
-    db.session.commit()
-    return jsonify({'message': 'Профиль обновлён успешно'})
-
-
 # -------------------------------
 # РЕГИСТРАЦИЯ / ЛОГИН / ЛОГАУТ
 # -------------------------------
