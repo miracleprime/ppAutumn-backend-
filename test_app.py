@@ -5,7 +5,6 @@ from models import Job
 
 @pytest.fixture(autouse=True)
 def setup_db():
-    """Перед каждым тестом создаём чистую БД в контексте приложения"""
     with app.app_context():
         db.drop_all()
         db.create_all()

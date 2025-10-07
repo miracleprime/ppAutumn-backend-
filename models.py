@@ -10,10 +10,10 @@ class User(db.Model):
     role = db.Column(db.String(20), nullable=False)  # "student" или "employer"
 
     # Дополнительные поля для профиля
-    full_name = db.Column(db.String(150))   # ФИО студента
-    course = db.Column(db.String(50))       # Курс
-    faculty = db.Column(db.String(100))     # Факультет
-    organization = db.Column(db.String(150))  # Организация работодателя
+    full_name = db.Column(db.String(150))
+    course = db.Column(db.String(50))
+    faculty = db.Column(db.String(100))
+    organization = db.Column(db.String(150))
 
     # Связи
     jobs = db.relationship("Job", back_populates="employer", cascade="all, delete-orphan")

@@ -1,7 +1,7 @@
 from app import app, db
 
 with app.app_context():
-    db.drop_all()   #  Удаляет все старые таблицы
-    db.create_all() #  Создаёт таблицы заново с актуальными моделями
+    db.drop_all()
+    db.create_all()
 
 print("База данных пересоздана!")

@@ -8,9 +8,7 @@ routes_bp = Blueprint('routes', __name__)
 CORS(routes_bp, resources={r"/*": {"origins": "*"}})
 
 
-# -------------------------------
 # ВАКАНСИИ (Job)
-# -------------------------------
 @routes_bp.route('/api/jobs', methods=['GET', 'POST'])
 def jobs():
     if request.method == 'GET':
@@ -69,7 +67,6 @@ def job_actions(job_id):
     if not job:
         return jsonify({'error': 'Вакансия не найдена'}), 404
 
-    # --- GET ---
     if request.method == 'GET':
         return jsonify({
             'id': job.id,
@@ -81,7 +78,6 @@ def job_actions(job_id):
             'employer': job.employer.username if job.employer else None
         })
 
-    # --- DELETE ---
     elif request.method == 'DELETE':
         if 'username' not in session:
             return jsonify({'error': 'Необходима авторизация'}), 401
@@ -94,7 +90,7 @@ def job_actions(job_id):
         db.session.commit()
         return jsonify({'message': 'Вакансия удалена'})
 
-    # --- PUT (редактирование) ---
+    # редактирование
     elif request.method == 'PUT':
         if 'username' not in session:
             return jsonify({'error': 'Необходима авторизация'}), 401
@@ -207,9 +203,7 @@ def update_application(app_id):
     db.session.commit()
     return jsonify({'message': 'Статус обновлён'})
 
-# -------------------------------
 # ПРОФИЛЬ
-# -------------------------------
 @routes_bp.route("/api/profile", methods=["GET", "PUT"])
 def api_profile():
     if "username" not in session:
@@ -241,9 +235,7 @@ def api_profile():
 
 
 
-# -------------------------------
 # РЕГИСТРАЦИЯ / ЛОГИН / ЛОГАУТ
-# -------------------------------
 @routes_bp.route('/register', methods=['GET', 'POST'])
 def register():
     error = None
@@ -289,16 +281,10 @@ def logout():
     return redirect(url_for('routes.login'))
 
 
-# -------------------------------
 # ГЛАВНАЯ
-# -------------------------------
 @routes_bp.route('/')
 def index():
     if 'username' in session:
         return render_template('index.html', username=session['username'])
     else:
         return redirect(url_for('routes.login'))
-
-# -------------------------------
-# ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ
-# -------------------------------
