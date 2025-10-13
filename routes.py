@@ -288,3 +288,56 @@ def index():
         return render_template('index.html', username=session['username'])
     else:
         return redirect(url_for('routes.login'))
+
+@routes_bp.route('/api/jobs/<int:job_id>/rate', methods=['POST'])
+def rate_job(job_id):
+    if 'username' not in session:
+        return jsonify({'error': 'Необходима авторизация'}), 401
+
+    user = User.query.filter_by(username=session['username']).first()
+    if not user or user.role != "student":
+        return jsonify({'error': 'Оценивать могут только студенты'}), 403
+
+    job = Job.query.get(job_id)
+    if not job:
+        return jsonify({'error': 'Вакансия не найдена'}), 404
+
+    data = request.get_json()
+    rating = data.get('rating')
+    try:
+        rating = float(rating)
+        if not (1 <= rating <= 5):
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Оценка должна быть числом от 1 до 5'}), 400
+
+    job.rating = rating
+    db.session.commit()
+    return jsonify({'message': 'Оценка сохранена', 'rating': job.rating})
+
+# -------------------------------
+# ОЦЕНКА СТАЖИРОВКИ
+# -------------------------------
+@routes_bp.route("/api/rate/<int:app_id>", methods=["POST"])
+def rate_application(app_id):
+    if "username" not in session:
+        return jsonify({"error": "Необходима авторизация"}), 401
+
+    user = User.query.filter_by(username=session["username"]).first()
+    app_obj = Application.query.get(app_id)
+    if not app_obj or app_obj.student_id != user.id:
+        return jsonify({"error": "Отклик не найден"}), 404
+
+    data = request.get_json()
+    rating = data.get("rating")
+
+    try:
+        rating = int(rating)
+        if not (1 <= rating <= 5):
+            raise ValueError
+    except Exception:
+        return jsonify({"error": "Оценка должна быть от 1 до 5"}), 400
+
+    app_obj.rating = rating
+    db.session.commit()
+    return jsonify({"message": "Оценка сохранена"}), 200

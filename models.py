@@ -38,6 +38,9 @@ class Job(db.Model):
     # связь с заявками
     applications = db.relationship("Application", back_populates="job", cascade="all, delete-orphan")
 
+    # ⭐ Новое поле для оценки
+    rating = db.Column(db.Float, default=None)
+
     def __repr__(self):
         return f"<Job {self.title}, type={self.job_type}, status={self.status}>"
 
@@ -46,16 +49,17 @@ class Application(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     resume_url = db.Column(db.String(250))
     cover_letter = db.Column(db.Text)
-    status = db.Column(db.String(20), default="submitted")  # submitted / in_review / invited / rejected / accepted
+    status = db.Column(db.String(20), default="submitted")
     applied_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # связь со студентом
     student_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     student = db.relationship("User", back_populates="applications")
 
-    # связь с вакансией
     job_id = db.Column(db.Integer, db.ForeignKey("job.id"), nullable=False)
     job = db.relationship("Job", back_populates="applications")
 
+    rating = db.Column(db.Integer, nullable=True)  # ⭐ Новое поле — оценка стажировки
+
     def __repr__(self):
-        return f"<Application job_id={self.job_id}, student_id={self.student_id}, status={self.status}>"
+        return f"<Application job_id={self.job_id}, student_id={self.student_id}, rating={self.rating}>"
+
