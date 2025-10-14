@@ -27,22 +27,21 @@ class Job(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(150), nullable=False)
     description = db.Column(db.Text, nullable=False)
-    job_type = db.Column(db.String(50), default="internship")  # internship / assistant / project
-    status = db.Column(db.String(20), default="open")  # open / closed
+    job_type = db.Column(db.String(50), default="internship")
+    status = db.Column(db.String(20), default="open")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # связь с работодателем
     employer_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     employer = db.relationship("User", back_populates="jobs")
 
-    # связь с заявками
     applications = db.relationship("Application", back_populates="job", cascade="all, delete-orphan")
 
-    # ⭐ Новое поле для оценки
-    rating = db.Column(db.Float, default=None)
+    # ⚡ Переименовываем колонку, чтобы не конфликтовала со старой таблицей rating
+    job_rating = db.Column("job_rating", db.Float, default=None)
 
     def __repr__(self):
-        return f"<Job {self.title}, type={self.job_type}, status={self.status}>"
+        return f"<Job {self.title}, rating={self.job_rating}>"
+
 
 
 class Application(db.Model):

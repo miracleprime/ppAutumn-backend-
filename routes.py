@@ -289,44 +289,52 @@ def index():
     else:
         return redirect(url_for('routes.login'))
 
-@routes_bp.route('/api/jobs/<int:job_id>/rate', methods=['POST'])
+@routes_bp.route("/api/jobs/<int:job_id>/rate", methods=["POST"])
 def rate_job(job_id):
-    if 'username' not in session:
-        return jsonify({'error': 'Необходима авторизация'}), 401
+    if "username" not in session:
+        return jsonify({"error": "Необходима авторизация"}), 401
 
-    user = User.query.filter_by(username=session['username']).first()
+    user = User.query.filter_by(username=session["username"]).first()
     if not user or user.role != "student":
-        return jsonify({'error': 'Оценивать могут только студенты'}), 403
+        return jsonify({"error": "Оценивать могут только студенты"}), 403
+
+    data = request.get_json()
+    try:
+        rating_value = int(data.get("rating"))
+        if not (1 <= rating_value <= 5):
+            raise ValueError
+    except Exception:
+        return jsonify({"error": "Введите оценку от 1 до 5"}), 400
 
     job = Job.query.get(job_id)
     if not job:
-        return jsonify({'error': 'Вакансия не найдена'}), 404
+        return jsonify({"error": "Вакансия не найдена"}), 404
 
-    data = request.get_json()
-    rating = data.get('rating')
-    try:
-        rating = float(rating)
-        if not (1 <= rating <= 5):
-            raise ValueError
-    except (TypeError, ValueError):
-        return jsonify({'error': 'Оценка должна быть числом от 1 до 5'}), 400
+    # Если уже есть рейтинг, обновляем, иначе ставим новый
+    if job.job_rating:
+        job.job_rating = (job.job_rating + rating_value) / 2
+    else:
+        job.job_rating = rating_value
 
-    job.rating = rating
     db.session.commit()
-    return jsonify({'message': 'Оценка сохранена', 'rating': job.rating})
+    return jsonify({"message": "Оценка сохранена"}), 200
 
 # -------------------------------
 # ОЦЕНКА СТАЖИРОВКИ
 # -------------------------------
 @routes_bp.route("/api/rate/<int:app_id>", methods=["POST"])
 def rate_application(app_id):
+    """Студент ставит оценку своей стажировке"""
     if "username" not in session:
         return jsonify({"error": "Необходима авторизация"}), 401
 
     user = User.query.filter_by(username=session["username"]).first()
+    if not user or user.role != "student":
+        return jsonify({"error": "Оценивать могут только студенты"}), 403
+
     app_obj = Application.query.get(app_id)
     if not app_obj or app_obj.student_id != user.id:
-        return jsonify({"error": "Отклик не найден"}), 404
+        return jsonify({"error": "Отклик не найден или не ваш"}), 404
 
     data = request.get_json()
     rating = data.get("rating")
@@ -335,9 +343,10 @@ def rate_application(app_id):
         rating = int(rating)
         if not (1 <= rating <= 5):
             raise ValueError
-    except Exception:
+    except (ValueError, TypeError):
         return jsonify({"error": "Оценка должна быть от 1 до 5"}), 400
 
     app_obj.rating = rating
     db.session.commit()
+
     return jsonify({"message": "Оценка сохранена"}), 200
